@@ -6,6 +6,12 @@ defmodule WeatherApiWeb.LocationController do
 
   action_fallback WeatherApiWeb.FallbackController
 
+  def index(conn, %{"name" => name}) do
+    with %Location{} = location <- Weather.get_location_by_name!(name) do
+      render(conn, :show, location: location)
+    end
+  end
+
   def index(conn, _params) do
     locations = Weather.list_locations()
     render(conn, :index, locations: locations)
@@ -20,14 +26,10 @@ defmodule WeatherApiWeb.LocationController do
     end
   end
 
-  # def show(conn, %{"id" => id}) do
-  #   location = Weather.get_location!(id)
-  #   render(conn, :show, location: location)
-  # end
-
-  def show(conn, %{"id" => name}) do
-    location = Weather.get_location_by_name!(name)
-    render(conn, :show, location: location)
+  def show(conn, %{"id" => id}) do
+    with %Location{} = location <- Weather.get_location!(id) do
+      render(conn, :show, location: location)
+    end
   end
 
   def update(conn, %{"id" => id, "location" => location_params}) do

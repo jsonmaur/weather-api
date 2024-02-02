@@ -23,4 +23,13 @@ defmodule WeatherApi.Weather.Location do
     |> validate_length(:forecast_url, max: 100)
     |> unique_constraint(:name)
   end
+
+  @doc """
+  Adds the forecasts to the schema through a changeset
+  """
+  def put_forecasts(location, forecasts) do
+    location
+    |> cast(%{forecasts: forecasts}, [:forecasts])
+    |> apply_changes()
+  end
 end

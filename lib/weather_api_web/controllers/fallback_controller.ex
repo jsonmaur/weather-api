@@ -21,4 +21,11 @@ defmodule WeatherApiWeb.FallbackController do
     |> put_view(html: WeatherApiWeb.ErrorHTML, json: WeatherApiWeb.ErrorJSON)
     |> render(:"404")
   end
+
+  def call(conn, {:error, :external}) do
+    conn
+    |> put_status(:bad_gateway)
+    |> put_view(html: WeatherApiWeb.ErrorHTML, json: WeatherApiWeb.ErrorJSON)
+    |> render(:"502")
+  end
 end

@@ -3,6 +3,8 @@ defmodule WeatherApi.Weather do
   The Weather context.
   """
 
+  require Logger
+
   import Ecto.Query, warn: false
   alias WeatherApi.Repo
 
@@ -37,17 +39,12 @@ defmodule WeatherApi.Weather do
       ** (Ecto.NoResultsError)
 
   """
-  def get_location!(id), do: Repo.get!(Location, id)
+  def get_location!(id) do
+    Repo.get!(Location, id) |> fetch_forecasts()
+  end
 
   def get_location_by_name!(name) do
-    location = Repo.get_by!(Location, name: name)
-
-    forecasts =
-      location.forecast_url
-      |> get_forecasts()
-      |> Enum.map(&Map.take(&1, ["name", "detailedForecast"]))
-
-    Map.merge(location, %{forecasts: forecasts})
+    Repo.get_by!(Location, name: name) |> fetch_forecasts()
   end
 
   @doc """
@@ -63,33 +60,49 @@ defmodule WeatherApi.Weather do
 
   """
   def create_location(%{"lat" => lat, "long" => long} = attrs) do
-    forecast_url = get_location(lat, long) |> dbg
-    attrs = Map.merge(attrs, %{"forecast_url" => forecast_url}) |> dbg
+    with {:ok, forecast_url} <- fetch_forecast_url(lat, long) do
+      attrs = Map.put(attrs, "forecast_url", forecast_url)
 
-    %Location{}
-    |> Location.changeset(attrs)
-    |> Repo.insert()
-  end
-
-  def get_location(lat, long) do
-    with req <- Finch.build(:get, "#{@location_base_url}/#{lat},#{long}"),
-         {:ok, %{body: body}} <- Finch.request(req, WeatherApi.Finch),
-         {:ok, decoded} <- Jason.decode(body) do
-      get_in(decoded, ["properties", "forecast"])
-    else
-      # TODO: PUT ERROR HANDLING IN HERE LATER
-      _ -> nil
+      %Location{}
+      |> Location.changeset(attrs)
+      |> Repo.insert()
     end
   end
 
-  def get_forecasts(url) do
+  @doc """
+  Fetches the forecast URL from the API for a location by lat/long.
+  """
+  def fetch_forecast_url(lat, long) do
+    url = "#{@location_base_url}/#{lat},#{long}"
+
     with req <- Finch.build(:get, url),
-         {:ok, %{body: body}} <- Finch.request(req, WeatherApi.Finch),
+         {:ok, %{status: 200, body: body}} <- Finch.request(req, WeatherApi.Finch),
          {:ok, decoded} <- Jason.decode(body) do
-      get_in(decoded, ["properties", "periods"])
+      {:ok, get_in(decoded, ["properties", "forecast"])}
     else
-      # TODO: PUT ERROR HANDLING IN HERE LATER
-      _ -> nil
+      _ ->
+        Logger.error("There was a problem with the response from #{url}")
+        {:error, :external}
+    end
+  end
+
+  @doc """
+  Fetches the detailed forecast from a forecast URL.
+  """
+  def fetch_forecasts(%Location{} = location) do
+    with req <- Finch.build(:get, location.forecast_url),
+         {:ok, %{status: 200, body: body}} <- Finch.request(req, WeatherApi.Finch),
+         {:ok, decoded} <- Jason.decode(body) do
+      forecasts =
+        decoded
+        |> get_in(["properties", "periods"])
+        |> Enum.map(&Map.take(&1, ["name", "detailedForecast"]))
+
+      Location.put_forecasts(location, forecasts)
+    else
+      _ ->
+        Logger.error("There was a problem with the response from #{location.forecast_url}")
+        {:error, :external}
     end
   end
 
